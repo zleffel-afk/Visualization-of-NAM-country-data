@@ -1,0 +1,616 @@
+---
+title: "UNGA and Trade Data Collection Process"
+author: "Zachary Leffel"
+date: "2023-11-25"
+output: html_document
+---
+
+```{r}
+#Add global variables
+min_year = 2011
+max_year = 2023
+ccode_list <- c(140, 850, 770, 771, 560, 433, 750, 670, 130, 373, 481, 475, 698, 380, 370, 531)
+```
+
+```{r setup, include=FALSE}
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(readxl)
+library(data.table)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+
+#gpplot theme
+theme_set(theme_bw())
+
+#Military exercises
+mil_ex = read.table("jmeDataPublic.tab", header=TRUE, sep="\t")
+jmerus = read.table("Joint Military Exercises Involving Russia.csv", header = TRUE, sep=",")
+brazil <- read_csv("brazil.csv")
+```
+
+```{r}
+#country code list added as dataframe
+cow_codes <- read.csv("COW-country-codes.csv")
+colnames(cow_codes) <- c("abr", "ccode", "country")
+nam_countries <- read.delim("nam.txt")
+```
+
+```{r}
+colnames(nam_countries) <- c("country")
+nam_countries <- nam_countries %>%
+  left_join(.,cow_codes, by="country") %>%
+  select(ccode) %>%
+  drop_na()
+
+ccode_list <- nam_countries$ccode
+class(ccode_list)
+ccode_list
+ccode_list <- c(140, 850, 770, 771, 560, 433, 750, 670, 130, 373, 481, 475, 698, 380, 370, 531)
+```
+
+### March resolution votes
+```{r}
+library(colorDF)
+
+march_votes <- read_csv("march_votes.txt", col_names = c("country", "vote"))
+```
+
+
+### Economic Data
+```{r}
+#import/export data prep for bilateral data
+rf_imports <- read_excel("rf_exports_2023.xlsx")
+rf_exports <- read_excel("rf_imports.xlsx")
+rf_exports <- rf_exports %>%
+  select(!...2)
+tot_exports <- read_excel("tot_imports.xlsx")
+tot_imports <- read_excel("tot_exports_2023.xlsx")
+```
+
+```{r}
+trade_clean <- function(df, type){
+  colnames(df) <- c(type, min_year:2022)
+  df <- reshape2::melt(df, id = c(type))
+  colnames(df) <- c("country", "year", type)
+  df <- left_join(df, cow_codes, by="country")
+  
+  df <- df %>%
+  mutate(ccode = case_when(
+    country=="Azerbaijan, Rep. of"~373,
+    country=="Belarus, Rep. of"~370,
+    country=="Eritrea, The State of"~531,
+    .default = as.numeric(ccode))) %>%
+  mutate(abr = case_when(
+    country=="Azerbaijan, Rep. of"~"AZE",
+    country=="Belarus, Rep. of"~"BLR",
+    country=="Eritrea, The State of"~"ERI",
+    .default = as.character(abr))) %>%
+    filter(ccode %in% ccode_list) %>%
+    drop_na()
+  
+  if(type=="exports"){
+    df <- df %>%
+      mutate(exports=as.numeric(exports))
+  }
+  else if(type=="tot_exports"){
+    df <- df %>%
+      mutate(tot_exports=as.numeric(tot_exports))
+  }
+  else if(type=="imports"){
+    df <- df %>%
+      mutate(imports=as.numeric(imports))
+  }
+  else if(type=="tot_imports"){
+    df <- df %>%
+      mutate(tot_imports=as.numeric(tot_imports))
+  }
+}
+```
+
+
+```{r}
+trade_clean_imports <- function(df, type){
+  colnames(df) <- c(type, min_year:2023)
+  df <- reshape2::melt(df, id = c(type))
+  colnames(df) <- c("country", "year", type)
+  df <- left_join(df, cow_codes, by="country")
+  
+  df <- df %>%
+  mutate(ccode = case_when(
+    country=="Azerbaijan, Rep. of"~373,
+    country=="Belarus, Rep. of"~370,
+    country=="Eritrea, The State of"~531,
+    .default = as.numeric(ccode))) %>%
+  mutate(abr = case_when(
+    country=="Azerbaijan, Rep. of"~"AZE",
+    country=="Belarus, Rep. of"~"BLR",
+    country=="Eritrea, The State of"~"ERI",
+    .default = as.character(abr))) %>%
+    filter(ccode %in% ccode_list) %>%
+    drop_na()
+  
+  if(type=="exports"){
+    df <- df %>%
+      mutate(exports=as.numeric(exports))
+  }
+  else if(type=="tot_exports"){
+    df <- df %>%
+      mutate(tot_exports=as.numeric(tot_exports))
+  }
+  else if(type=="imports"){
+    df <- df %>%
+      mutate(imports=as.numeric(imports))
+  }
+  else if(type=="tot_imports"){
+    df <- df %>%
+      mutate(tot_imports=as.numeric(tot_imports))
+  }
+}
+```
+
+```{r}
+tot_exports = trade_clean(tot_exports, "tot_exports")
+tot_imports = trade_clean_imports(tot_imports, "tot_imports")
+```
+
+```{r}
+rf_exports = trade_clean(rf_exports, "exports")
+rf_imports = trade_clean_imports(rf_imports, "imports")
+```
+
+```{r}
+rf_graph <- ggplot(rf_exports, aes(x=year, y=exports, group=country, color=country)) + geom_line() + geom_point()
+rf_graph
+```
+
+```{r}
+perc <- function(t, r, y){
+    p <- r / t * 100
+    p <- cbind(y, p)
+    return(p)
+}
+```
+
+```{r}
+trade_gather <- function(){
+  rfi <- rf_imports #%>%
+    #filter(ccode==code) 
+  ti <- tot_imports #%>%
+    #filter(ccode==code) 
+  
+  ci <- left_join(rfi, ti, by=c("year","ccode"))
+  
+  rfe <- rf_exports #%>%
+    #filter(ccode==code) 
+  te <- tot_exports #%>%
+    #filter(ccode==code) 
+  
+  ce <- left_join(rfe, te, by=c("year", "ccode"))
+  
+  trade_df <- left_join(ci, ce, by=c("year","ccode"))
+  trade_df_clean <- trade_df %>%
+    rename_at(
+      vars(ends_with(".x")),
+      ~str_replace(., "\\..$", "")
+    ) %>%
+        rename_at(
+      vars(ends_with(".x")),
+      ~str_replace(., "\\..$", "")
+    ) %>%
+    select_at(
+      vars(-ends_with(c(".y", ".x.y", ".y.y",".y.x", ".x.x")))
+    ) %>%
+    mutate(year = as.numeric(as.character(year)))
+  
+  return(trade_df_clean)
+}
+
+trade_country <- function(c){
+  df <- trade_gather()
+  df <- df %>%
+    filter(ccode == c)
+  
+  return(df)
+}
+  
+```
+
+```{r}
+#get the percentage of total imports and exports that Russia made up as a partner of the target country for each year
+partner_size <- function(country, exports_total, exports_rus, imports_total, imports_rus, years){
+  exports_perc <- perc(exports_total, exports_rus, years)
+  exports_perc
+  imports_perc <- perc(imports_total, imports_rus, years)
+  imports_perc
+  summarized_perc <- cbind(exports_perc, imports_perc)
+  paste(summarized_perc)
+  colnames(summarized_perc) <- c("year", "exports_perc", "year2", "imports_perc")
+  summarized_perc <- subset(summarized_perc, select=c(year, exports_perc, imports_perc))
+  summarized_perc <- summarized_perc %>% as.data.frame() %>% mutate(country = country)
+  return(summarized_perc)
+}
+```
+
+```{r}
+partner_trade <- function(trade_df, ccode){
+  trade_df <- trade_df %>% 
+    mutate(perc_exports = exports/tot_exports*100)%>%
+    mutate(perc_imports = imports/tot_imports*100)
+  
+  return(trade_df)
+}
+```
+
+
+
+```{r}
+
+theme_update(title = element_text(family="Times New Roman"), text = element_text(family="Times New Roman"))
+
+visualize_imports <- function(df){
+  ggplot(df, aes(x=year, y=imports_perc)) + geom_line(color="firebrick") + geom_point(shape="diamond", size=2, color="firebrick") + labs(title = "Percentage of Imports from Russia", x="Year", y="Percentage of Total Imports")
+}
+
+visualize_exports <- function(df){
+  ggplot(df, aes(x=year, y=exports_perc)) + geom_line(color="cornflowerblue") + geom_point(shape="diamond", size=2, color="cornflowerblue") + labs(title = "Percentage of Exports going to Russia", x="Year", y="Percentage of Total Exports")
+}
+
+visualize_trade <- function(df){
+  name <- df[1,1]
+  t = paste(name,": Trade with Russia as Percentage of Total Imports/Exports")
+  df_long <- df %>%
+    select("perc_exports", "perc_imports", "year") %>%
+    pivot_longer(-year, names_to="variable", values_to="value")
+  ggplot(df_long, aes(year, value, col=variable)) + geom_line() + geom_point(shape="diamond", size=2) + scale_colour_manual(values = c("cornflowerblue", "firebrick"), labels=c("Exports", "Imports")) + labs(title=t, x="Year", y="Percentage of Total Imports/Exports", color="Type") 
+}
+
+visualize_trade_all <- function(df){
+  df_long <- df %>%
+    select("perc_exports", "perc_imports", "year", "country") %>%
+    pivot_longer(-c(year, country), names_to="variable", values_to="value")
+  str(df_long)
+  #colnames(df_long)[colnames(df_long) == 'country'] <- #"country_"
+  ggplot(df_long, aes(year, value, col=variable)) + geom_line() + geom_point(shape="diamond", size=2) + scale_colour_manual(values = c("cornflowerblue", "firebrick"), labels=c("Exports", "Imports")) + labs(title="Trade with Russia as Percentage of Total Imports/Exports", x="Year", y="Percentage of Total Imports/Exports", color="Type") + facet_wrap(~country, scales="free_y") + scale_x_continuous(breaks=seq(2010,2023,5), labels = seq(2010,2023,5), limits=c(2010,2023))
+}
+```
+
+```{r eval=FALSE}
+year_on <- function(ccode_list){
+  year_on_list <- matrix(ncol=3, nrow=0)
+  gathered <- trade_gather()
+  year_on_partners <- partner_trade(gathered)
+  year_on_partners <- drop_na(year_on_partners)
+  for(c in ccode_list){
+    year_on_change <- year_on_partners %>%
+      select("perc_exports", "perc_imports", "year", "country", "ccode") %>%
+      pivot_longer(-c(perc_export), names_to="variable", values_to="value") %>%
+      filter(year==2021 | year==2022) %>%
+      filter(ccode == c)
+    
+    change_exp <- (year_on_change[1,5] - year_on_change[3,5])*100/year_on_change[1,5]
+    r <- c(as.numeric(c), as.numeric(change_exp), as.numeric(year_on_change[1,5]))
+    year_on_list <- rbind(year_on_list, r)
+  }
+  y <- as.data.frame(year_on_list)
+  y <- na.omit(y)
+  colnames(y) <- c("ccode", "year_on_decrease", "perc_exports_2021")
+  y <- left_join(y, cow_codes, by="ccode")
+  y <- y %>% 
+    select("ccode", "country", "year_on_decrease", "perc_exports_2021")
+  return(y)
+}
+
+y1 <- year_on(ccode_list)
+y2 <- y1 %>%
+  filter(perc_exports_2021 > 1)
+```
+
+```{r}
+trade_summary <-function(ccode){
+  gathered <- trade_country(ccode)
+  all_trade <- partner_trade(gathered, ccode)
+  str(all_trade)
+  all_trade <- drop_na(all_trade)
+  visualize_trade(all_trade)
+}
+```
+
+```{r}
+trade_summary(140)
+```
+
+```{r}
+trade_complete <- function(){
+  df <- trade_gather()
+  df <- partner_trade(df)
+  return(df)
+}
+
+df <- trade_complete()
+visualize_trade_all(df)
+```
+
+
+
+
+
+### Agreement Scores
+```{r}
+#Adding agreement scores as dataframe
+load("AgreementScoresAll_Jul2023.Rdata")
+ideal_point <- read.csv("IdealpointestimatesAll_Jul2023.csv")
+```
+
+```{r}
+#function to calculate mean agreement with Russia over a timespan
+country_unga_data <- function(country_code){
+  votes <- dfAgree[which(dfAgree$ccode1 == country_code & dfAgree$ccode2 == 365 & dfAgree$year >= min_year &dfAgree$year <= max_year),]
+  print("Mean Agreement With Russia")
+  print(mean(votes$agree))
+  print("Mean Ideal Point")
+  print(mean(votes$IdealPointAll.x))
+  print("Ideal Point Distance")
+  print(mean(votes$IdealPointDistance))
+  return(votes)
+}
+```
+
+```{r}
+#function to get agreement scores by year for a set timespan
+country_unga_data_vis <- function(country_code){
+  votes <- dfAgree[which(dfAgree$ccode1 == country_code & dfAgree$ccode2 == 365 & dfAgree$year >= min_year &dfAgree$year <= max_year),]
+  country_matrix <- cbind(votes$ccode1, votes$agree, votes$year)
+  return(country_matrix)
+}
+```
+
+```{r}
+#takes agreement data for each country and binds all of it together into a matrix
+agree_over_time <- function(ccode_list){
+  agree_vector <- lapply(ccode_list, country_unga_data_vis)
+  agree_matrix <- do.call(rbind, as.list(agree_vector))
+  return(agree_matrix)
+}
+```
+
+```{r}
+country_agreement <- agree_over_time(ccode_list)
+
+#Adds column names
+colnames(country_agreement) <- c("ccode","agree", "year")
+df_country_agreement <- as.data.frame(country_agreement)
+#Dynamically adds a country name variable based on ccode
+df_country_agreement <- df_country_agreement %>%
+  mutate(country = case_when(
+    ccode==140~"Brazil",
+    ccode==850~"Indonesia",
+    ccode==770~"Pakistan",
+    ccode==771~"Bangladesh",
+    ccode==560~"South Africa",
+    ccode==433~"Senegal",
+    ccode==670~"Saudi Arabia",
+    ccode==750~"India",
+    ccode==130~"Ecuador",
+    ccode==373~"Azerbaijan",
+    ccode==370~"Belarus",
+    ccode==481~"Gabon",
+    ccode==475~"Nigeria",
+    ccode==698~"Oman",
+    ccode==380~"Sweden",
+    ccode==531~"Eritrea"
+  )) %>%
+  mutate(region = case_when(
+    ccode==140~"South America",
+    ccode==850~"SE Asia",
+    ccode==770~"Middle East",
+    ccode==771~"SE Asia",
+    ccode==560~"Africa",
+    ccode==433~"Africa",
+    ccode==670~"Middle East",
+    ccode==750~"SE Asia",
+    ccode==130~"South America",
+    ccode==373~"Europe",
+    ccode==370~"Europe",
+    ccode==481~"Africa",
+    ccode==475~"Africa",
+    ccode==698~"Middle East",
+    ccode==380~"Europe",
+    ccode==531~"Africa"
+  ))
+
+
+df_trade <- trade_complete()
+merged_df <- df_trade %>%
+  left_join(., df_country_agreement, by=join_by("ccode","year")) %>%
+  mutate(after_war = case_when(
+    year==2022~1,
+    year==2023~1,
+    year<2022~0
+    ))
+ 
+
+```
+
+```{r}
+merged_df <- merged_df %>%
+    mutate(condemned_russia = case_when(
+    ccode==140~1,
+    ccode==850~1,
+    ccode==770~0,
+    ccode==771~0,
+    ccode==560~0,
+    ccode==433~0,
+    ccode==670~1,
+    ccode==750~0,
+    ccode==130~1,
+    ccode==373~0,
+    ccode==370~0,
+    ccode==481~1,
+    ccode==475~1,
+    ccode==698~1,
+    ccode==380~1,
+    ccode==531~0
+  )) %>%
+  mutate(supported_russia = case_when(
+    ccode==140~0,
+    ccode==850~0,
+    ccode==770~0,
+    ccode==771~0,
+    ccode==560~0,
+    ccode==433~0,
+    ccode==670~0,
+    ccode==750~0,
+    ccode==130~0,
+    ccode==373~0,
+    ccode==370~1,
+    ccode==481~0,
+    ccode==475~0,
+    ccode==698~0,
+    ccode==380~0,
+    ccode==531~1
+  ))
+
+merged_df_limited <- merged_df %>%
+  filter(year >= 2021)
+
+
+lm1 <- lm(data = merged_df, perc_exports ~ agree)
+lm2 <- lm(data = merged_df, perc_exports ~ agree + region)
+lm3 <- lm(data=merged_df_limited, perc_exports ~ after_war + condemned_russia + supported_russia)
+summary(lm1)
+summary(lm2)
+summary(lm3)
+```
+
+```{r}
+merged_df_limited <- merged_df %>%
+  mutate(perc_exports = replace_na(perc_exports,0)) %>%
+  mutate(tot_exports = replace_na(tot_exports,0)) %>%
+  mutate(exports = replace_na(exports,0)) %>%
+  filter(year >= 2021)
+
+lm21 <-lm(data = merged_df, perc_imports ~ agree)
+lm22 <- lm(data = merged_df, perc_imports ~ agree + region)
+lm23 <- lm(data=merged_df_limited, perc_imports ~ after_war + condemned_russia + supported_russia)
+
+summary(lm21)
+summary(lm22)
+summary(lm23)
+
+#ggplot(merged_df, aes(x=year, y=lm2$res)) +
+#geom_point() + geom_line()
+#library(tseries)
+#runs.test(factor(lm2$res >0))
+```
+
+```{r}
+library(huxtable)
+hux_exports <- huxreg(lm21, lm22, lm23, lm1, lm2, lm3)
+hux_exports
+```
+
+```{r}
+hist(log(merged_df$perc_imports), breaks = 50)
+summary(log(merged_df$perc_imports))
+```
+
+
+
+
+```{r}
+#Plots side-by-side line plots of each country's agreement score with Russia over time, distinguished by color.
+ggplot(df_country_agreement, aes(x=year, y=agree, group=ccode, color=country)) + geom_line() + geom_vline(xintercept=2021.15, linetype="dotted", linewidth = 0.3) + geom_text(aes(x=2020,y=0.87,label="\nInvasion of Ukraine"), color="blue",angle=0) + geom_point() + labs(x="Year", y="Agreement", title="1.2: Agreement with Russia on UN resolutions", group="Country")
+```
+
+```{r}
+#Plots side-by-side line plots of each region's agreement score with Russia over time, distinguished by color.
+
+df_country_agr_region <- df_country_agreement %>%
+  mutate(region = case_when(
+    region !="South America"~"Other",
+    region =="South America"~"South America"
+  ))
+
+ggplot(df_country_agr_region, aes(x=year, y=agree, group=ccode, color=region)) + geom_line() + geom_vline(xintercept=2021.15, linetype="dotted", linewidth = 0.3) + geom_text(aes(x=2020,y=0.87,label="\nInvasion of Ukraine"), color="blue",angle=0) + geom_point() + labs(x="Year", y="Agreement", title="1.2: Agreement with Russia on UN resolutions", group="Country")
+```
+
+```{r}
+df_country_single <- df_country_agreement %>% filter(country == "Gabon")
+ggplot(df_country_single, aes(x=year, y=agree, group=ccode, color=country)) + geom_line() + geom_vline(xintercept=2021.15, linetype="dotted", linewidth = 0.3) + geom_text(aes(x=2020,y=0.87,label="\nInvasion of Ukraine"), color="blue",angle=0) + geom_point() + labs(x="Year", y="Agreement", title="1.2: Agreement with Russia on UN resolutions", group="Country")
+```
+
+```{r}
+#Plots dot plot of country agreement scores
+df_country_dot <- df_country_agreement %>%
+  filter(year == 2012 | year == 2015 | year == 2022) %>%
+  filter(ccode!=365 & ccode != 380 & ccode != 370) %>%
+  mutate(year = as.character(year))
+
+
+ggplot(df_country_dot, aes(y=agree, x=year, color=country)) + geom_boxplot(mapping=aes(y=agree, group=year, color=NULL), width=.3, staplewidth=1) + geom_point()
+```
+
+```{r include=FALSE}
+#Attempt to average agreement by region
+df_region_agreement <- df_country_agreement %>%
+  group_by(region)
+
+ggplot(df_country_agreement, aes(x=year, y=agree, group=region, color=region)) + geom_line() + geom_vline(xintercept=2022.15, linetype="dotted", linewidth = 0.3) + geom_text(aes(x=2020,y=0.87,label="\nInvasion of Ukraine"), color="blue",angle=0) + geom_point() + labs(x="Year", y="Agreement", title="1.2: Agreement with Russia on UN resolutions", group="Country")
+```
+
+```{r}
+#Plots side-by-side line plots of each country's ideal point over time, distinguished by color
+```
+
+
+```{r}
+#Gets data fram of Russia's military exercise data
+russia_mil_ex <- mil_ex[which(mil_ex$countryCode == 365 & mil_ex$startYear > min_year & mil_ex$startYear < max_year),]
+
+#Checks each military exercise target country has done to see if Russia was also involved, then puts any match into the country_joint dataframe
+country_mil_ex_data <- function(country_code, country_name){
+  country_mil_ex <- mil_ex[which(mil_ex$countryCode == country_code & mil_ex$startYear > min_year & mil_ex$startYear < max_year),]
+  country_joint <- merge(country_mil_ex, russia_mil_ex, by.x = "xID" , by.y = "xID")
+  print(ggplot(data=country_joint, aes(x=startYear.x)) + geom_bar() + labs(x="Year", y="Number of Joint Exercises", title = paste(country_name, "/Russia Joint Exercises", sep='')))
+  by_year <- country_joint %>% group_by(startYear.x) %>%tally()
+  ggplot(data=by_year, aes(x=startYear.x, y=n)) + geom_line() + labs(x="Year", y="Number of Joint Exercises", title = paste(country_name, "/Russia Joint Exercises", sep='')) + geom_line()
+  return(country_joint)
+}
+
+```
+
+## Russia
+```{r}
+russia_votes <- dfAgree[which(dfAgree$ccode1 == 365 & dfAgree$year > min_year &dfAgree$year < max_year),]
+print("Mean Ideal Point")
+print(mean(russia_votes$IdealPointAll.x))
+```
+
+## South Africa
+```{r, include=FALSE}
+sa_votes <- country_unga_data(560)
+sa_mil_ex <- country_mil_ex_data(560, "South Africa")
+```
+
+## Ecuador
+```{r, include=FALSE}
+ecuador_votes <- country_unga_data(130)
+ecuador_mil_ex <- country_mil_ex_data(130, "Ecuador")
+```
+
+## India
+```{r}
+india_votes <- country_unga_data(750)
+india_mil_ex <- country_mil_ex_data(750, "India")
+#df_india_agree <- df_country_agreement[df_country_agreement$country == "India"]
+#ggplot(indiadf, aes(x=years, y=agree)) + geom_line() + geom_point()
+```
+
+## Saudi Arabia
+```{r, include=FALSE}
+saudia_arabia_votes <- country_unga_data(670)
+saudi_mil_ex_votes <- country_mil_ex_data(670, "Saudi Arabia")
+```

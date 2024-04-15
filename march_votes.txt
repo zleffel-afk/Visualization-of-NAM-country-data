@@ -1,0 +1,16 @@
+Azerbaijan, Absent
+Bangladesh, Abstain
+Belarus, Against
+Brazil, Approve
+Ecuador, Approve
+Eritrea, Against
+Gabon, Approve
+India, Abstain
+Indonesia, Approve
+Nigeria, Approve
+Oman, Approve
+Pakistan, Abstain
+Saudi Arabia, Approve
+Senegal, Abstain
+South Africa, Abstain
+Sweden, Approve
